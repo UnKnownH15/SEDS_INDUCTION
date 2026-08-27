@@ -1,43 +1,40 @@
-import pandas as pnd
-import numpy as ny
+import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 
-# data extraction step
-data_1 = pnd.read_csv('Depth Data.csv')
-data_1['Depth (m)'] = pnd.to_numeric(data_1['Depth (m)'], errors='coerce')
-data_1['Depth (m)'] = data_1['Depth (m)'].interpolate(method='linear')
+data = pd.read_csv("Depth Data.csv")
 
-# ignoring sudden data change like too sudden drop or spike
-mediannn = data_1['Depth (m)'].rolling(window=3, center=True).median()
-difference = ny.abs(data_1['Depth (m)'] - mediannn)
+raw_depth = pd.to_numeric(data["Depth (m)"], errors="coerce")
 
-data_1['Depth_Despiked'] = ny.where(difference > 10, mediannn, data_1['Depth (m)'])
-data_1['Depth_Despiked'] = data_1['Depth_Despiked'].fillna(data_1['Depth (m)'])
+clean_depth = raw_depth.copy()
+mean_depth = clean_depth.mean()
+std_depth = clean_depth.std()
+clean_depth[(clean_depth - mean_depth).abs() > 3 * std_depth] = np.nan
+clean_depth = clean_depth.interpolate()
+clean_depth = clean_depth.bfill()
 
-# smooth random noise
-data_1['Depth_Clean'] = data_1['Depth_Despiked'].rolling(window=10, center=True).mean().fillna(data_1['Depth_Despiked'])
+smooth_depth = clean_depth.rolling(window=7, min_periods=1, center=True).mean()
 
-# animation
+time = np.arange(1, len(smooth_depth) + 1)
+
 fig, ax = plt.subplots(figsize=(10, 6))
+raw_line, = ax.plot([], [], color="red", linewidth=1, label="Original Data")
+smooth_line, = ax.plot([], [], color="blue", linewidth=2, label="Filtered Data")
 
-ax.set_xlim(0, len(data_1))
-ax.set_ylim(data_1['Depth_Clean'].min() - 50, 0)
-ax.set_title('Live Sea Floor Depth Monitoring')
-ax.set_xlabel('Time (s)')
-ax.set_ylabel('Depth (m)')
+ax.set_xlim(0, len(time))
+ax.set_ylim(min(raw_depth.min(), smooth_depth.min()) - 20, max(raw_depth.max(), smooth_depth.max()) + 20)
+ax.set_title("Ship Depth vs Time")
+ax.set_xlabel("Time (s)")
+ax.set_ylabel("Depth (m)")
 ax.grid(True)
-
-
-line, = ax.plot([], [], color='red', linewidth=2, label='cleaned depth')
 ax.legend()
 
-def animate(i):
-    x = data_1['Point'].iloc[:i]
-    y = data_1['Depth_Clean'].iloc[:i]
-    line.set_data(x, y)
-    return line,
+def update(frame):
+    raw_line.set_data(time[:frame], raw_depth[:frame])
+    smooth_line.set_data(time[:frame], smooth_depth[:frame])
+    return raw_line, smooth_line
 
-ani = animation.FuncAnimation(fig, animate, frames=len(data_1), interval=10, blit=True)
+ani = animation.FuncAnimation(fig, update, frames=len(time), interval=20, blit=True, repeat=False)
 
 plt.show()
